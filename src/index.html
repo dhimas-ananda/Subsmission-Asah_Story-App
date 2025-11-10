@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Story App</title>
+    <link rel="icon" href="./assets/favicon.png" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="" crossorigin=""/>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0b64d6">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content-inner">Skip to content</a>
+    <header class="header-inner container" role="banner">
+      <div id="site-title"><img src="./assets/logo.png" alt="logo" />Story App</div>
+      <nav id="main-nav" aria-label="Main Navigation">
+        <a href="#/">Home</a>
+        <a href="#/add">Tambah</a>
+        <a href="#/login">Login</a>
+        <a href="#/register">Register</a>
+      </nav>
+    </header>
+    <main id="main-content-inner" class="container" role="main">
+    </main>
+    <div id="loading-overlay" aria-hidden="true" class="hidden">
+      <div class="loader" role="status" aria-live="polite">Memproses...</div>
+    </div>
+    <footer role="contentinfo"><div class="container">© Story App</div></footer>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="module" src="/src/scripts/index.js"></script>
+  </body>
+</html>

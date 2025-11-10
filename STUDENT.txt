@@ -1,0 +1,5 @@
+APP_URL=<url_aplikasi>
+STORY_API_BASE=https://story-api.dicoding.dev/v1
+
+MAP_SERVICE_API_KEY=
+
