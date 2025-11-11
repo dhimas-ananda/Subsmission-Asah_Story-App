@@ -16,13 +16,15 @@ module.exports = merge(common, {
     ],
   },
   devServer: {
-    static: path.resolve(__dirname, 'dist'),
+    static: { directory: path.resolve(__dirname, 'dist'), watch: false },
+    hot: true,
+    host: '0.0.0.0',
     port: 9000,
     client: {
-      overlay: {
-        errors: true,
-        warnings: true,
-      },
+      overlay: true,
+      webSocketURL: { protocol: 'ws', hostname: 'localhost', port: 9000, pathname: '/ws' }
     },
-  },
+    watchFiles: { paths: ['src/**/*'], options: { ignored: /dist|node_modules/ } }
+  }
 });
+

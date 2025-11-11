@@ -1,206 +1,165 @@
-const IDB_DB = 'story-app-db';
-const IDB_VERSION = 1;
-
-function openDB() {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open(IDB_DB, IDB_VERSION);
-        req.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains('stories')) db.createObjectStore('stories', { keyPath: 'id' });
-        if (!db.objectStoreNames.contains('outbox')) db.createObjectStore('outbox', { keyPath: 'cid', autoIncrement: true });
-        };
-        req.onsuccess = (e) => resolve(e.target.result);
-        req.onerror = (e) => reject(e.target.error);
-    });
-}
-async function idbPut(storeName, value) {
-    const db = await openDB();
-    return new Promise((res, rej) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        tx.objectStore(storeName).put(value);
-        tx.oncomplete = () => res(true);
-        tx.onerror = () => rej(tx.error);
-    });
-}
-async function idbGetAll(storeName) {
-    const db = await openDB();
-    return new Promise((res, rej) => {
-        const tx = db.transaction(storeName, 'readonly');
-        const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => res(req.result || []);
-        req.onerror = () => rej(req.error);
-    });
-}
-async function idbDelete(storeName, key) {
-    const db = await openDB();
-    return new Promise((res, rej) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        tx.objectStore(storeName).delete(key);
-        tx.oncomplete = () => res(true);
-        tx.onerror = () => rej(tx.error);
-    });
-}
-
-const CACHE_VERSION = 'v1';
-const PRECACHE = `app-shell-${CACHE_VERSION}`;
-const RUNTIME = `runtime-${CACHE_VERSION}`;
-const PRECACHE_URLS = [
-    '/', '/index.html', '/manifest.json',
-    '/assets/logo.png', '/assets/favicon.png'
-];
-
 const API_BASE = 'https://story-api.dicoding.dev/v1';
-
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(PRECACHE).then((cache) => cache.addAll(PRECACHE_URLS))
-    );
-    self.skipWaiting();
+const APP_SHELL = 'app-shell-v1';
+const RUNTIME = 'runtime-v1';
+const IMAGE = 'images-v1';
+const OUTBOX_STORE = 'outbox';
+const PRECACHE = ['/', '/index.html', '/app.bundle.js', '/styles.css', '/manifest.json'];
+self.addEventListener('install', (e) => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(APP_SHELL).then(c => c.addAll(PRECACHE)));
 });
-
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        (async () => {
-        const keys = await caches.keys();
-        await Promise.all(keys.filter(k => ![PRECACHE, RUNTIME].includes(k)).map(k => caches.delete(k)));
-        await clients.claim();
-        })()
-    );
+self.addEventListener('activate', (e) => {
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => ![APP_SHELL, RUNTIME, IMAGE].includes(k)).map(k => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
-
 self.addEventListener('fetch', (event) => {
-    const req = event.request;
-    const url = new URL(req.url);
-
-    if (req.method !== 'GET') {
-        return;
-    }
-
-    if (url.origin === new URL(API_BASE).origin && url.pathname.startsWith('/v1/stories')) {
-        event.respondWith((async () => {
-        try {
-            const networkResponse = await fetch(req);
-            if (networkResponse && networkResponse.ok) {
-            const clone = networkResponse.clone();
-            const json = await clone.json().catch(()=>null);
-            if (json && (json.listStory || json.list)) {
-                const stories = json.listStory || json.list || [];
-                for (const s of stories) {
-                try { await idbPut('stories', s); } catch(e){}
-                }
-            }
-            }
-            return networkResponse;
-        } catch (err) {
-            const stored = await idbGetAll('stories');
-            const payload = { error: false, message: 'offline', listStory: stored };
-            return new Response(JSON.stringify(payload), { headers: { 'Content-Type':'application/json' } });
-        }
-        })());
-        return;
-    }
-
-    if (req.destination === 'image' || url.pathname.match(/\.(png|jpg|jpeg|svg|webp)$/)) {
-        event.respondWith(
-        caches.open(RUNTIME).then(async cache => {
-            const cached = await cache.match(req);
-            const networkFetch = fetch(req).then(resp => { if (resp.ok) cache.put(req, resp.clone()); return resp; }).catch(()=>null);
-            return cached || networkFetch || fetch(req).catch(()=>cached);
-        })
-        );
-        return;
-    }
-
+  const req = event.request;
+  const url = new URL(req.url);
+  const urls = new URL(event.request.url);
+  if (urls.hostname.includes('tile.openstreetmap.org') || urls.hostname.includes('a.tile.openstreetmap.org')) {
     event.respondWith(
-        caches.match(req).then((cached) => cached || fetch(req).then((response) => {
-        return caches.open(RUNTIME).then(cache => { cache.put(req, response.clone()); return response; });
-        }).catch(() => {
-        if (req.mode === 'navigate') return caches.match('/index.html');
-        }))
+      caches.open('osm-tiles').then(cache => cache.match(event.request).then(resp => resp || fetch(event.request).then(r => { cache.put(event.request, r.clone()); return r; })))
     );
-});
-
-async function flushOutbox() {
-    const out = await idbGetAll('outbox');
-    for (const entry of out) {
-        try {
-        if (entry.formDataFields) {
-            const fd = new FormData();
-            for (const f of entry.formDataFields) {
-            if (f.kind === 'file') {
-                const bytes = atob(f.data);
-                const arr = new Uint8Array(bytes.length);
-                for (let i=0;i<bytes.length;i++) arr[i] = bytes.charCodeAt(i);
-                const blob = new Blob([arr], { type: f.type || 'image/png' });
-                fd.append(f.name, blob, f.filename || 'photo.png');
-            } else {
-                fd.append(f.name, f.value);
-            }
-            }
-            const token = entry.token ? entry.token : null;
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-            const resp = await fetch(`${API_BASE}/stories`, { method: 'POST', body: fd, headers });
-            if (resp && resp.ok) {
-            await idbDelete('outbox', entry.cid);
-            }
-        } else if (entry.jsonPayload) {
-            const token = entry.token ? entry.token : null;
-            const resp = await fetch(`${API_BASE}/stories/guest`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(entry.jsonPayload)
-            });
-            if (resp && resp.ok) await idbDelete('outbox', entry.cid);
-        } else {
-            await idbDelete('outbox', entry.cid);
+    return;
+  }
+  if (req.method === 'GET') {
+    if (req.destination === 'image' || url.pathname.match(/\.(png|jpg|jpeg|svg|webp|gif)$/)) {
+      event.respondWith(caches.open(IMAGE).then(cache => cache.match(req).then(r => r || fetch(req).then(res => { cache.put(req, res.clone()); return res; }))));
+      return;
+    }
+    if (url.pathname.includes('/v1/stories') || url.pathname.includes('/stories')) {
+      event.respondWith(fetch(req).then(res => { const clone = res.clone(); caches.open(RUNTIME).then(c => c.put(req, clone)); return res; }).catch(() => caches.match(req)));
+      return;
+    }
+    event.respondWith(caches.match(req).then(r => r || fetch(req).catch(() => caches.match('/index.html'))));
+    return;
+  }
+  if (req.method === 'POST' && url.pathname.endsWith('/stories')) {
+    event.respondWith((async () => {
+      try {
+        const networkResp = await fetch(req.clone());
+        return networkResp;
+      } catch (err) {
+        const fd = await req.clone().formData();
+        const fields = [];
+        for (const pair of fd.entries()) {
+          const [name, value] = pair;
+          if (value instanceof File) {
+            const ab = await value.arrayBuffer();
+            let binary = '';
+            const bytes = new Uint8Array(ab);
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            fields.push({ kind: 'file', name, filename: value.name, type: value.type, data: btoa(binary) });
+          } else {
+            fields.push({ kind: 'field', name, value: value.toString() });
+          }
         }
-        } catch (e) {
-        console.error('flushOutbox error', e);
+        const out = { url: req.url, method: req.method, formDataFields: fields, token: null, createdAt: Date.now() };
+        await storeOutbox(out);
+        if (self.registration.sync) {
+          await self.registration.sync.register('outbox-sync');
         }
-    }
-}
-
-self.addEventListener('sync', (event) => {
-    if (event.tag === 'sync-outbox') {
-        event.waitUntil(flushOutbox());
-    }
+        return new Response(JSON.stringify({ error: false, message: 'queued-offline' }), { status: 202, headers: { 'Content-Type': 'application/json' } });
+      }
+    })());
+    return;
+  }
 });
-
-self.addEventListener('message', (evt) => {
-    if (!evt.data) return;
-    if (evt.data === 'flush-outbox') {
-        evt.waitUntil(flushOutbox());
-    }
-});
-
-self.addEventListener('push', (event) => {
-    let payload = {};
-    try { payload = event.data ? event.data.json() : {}; } catch(e){ payload = { title: 'Story App', body: 'Ada story baru' }; }
-    const title = payload.title || (payload.notification && payload.notification.title) || 'Story App';
-    const options = {
-        body: payload.body || (payload.notification && payload.notification.body) || 'Click to view',
-        icon: payload.icon || '/assets/favicon.png',
-        badge: payload.badge || '/assets/favicon.png',
-        data: payload.data || { url: '/#/' },
-        actions: payload.actions || [{ action: 'open', title: 'Lihat' }]
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const rq = indexedDB.open('story-app-db', 1);
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains(OUTBOX_STORE)) db.createObjectStore(OUTBOX_STORE, { keyPath: 'cid', autoIncrement: true });
     };
-    event.waitUntil(self.registration.showNotification(title, options));
+    rq.onsuccess = () => resolve(rq.result);
+    rq.onerror = () => reject(rq.error);
+  });
+}
+async function storeOutbox(value) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(OUTBOX_STORE, 'readwrite');
+    tx.objectStore(OUTBOX_STORE).add(value);
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function getAllOutbox() {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(OUTBOX_STORE, 'readonly');
+    const req = tx.objectStore(OUTBOX_STORE).getAll();
+    req.onsuccess = () => res(req.result || []);
+    req.onerror = () => rej(req.error);
+  });
+}
+async function deleteOutboxKey(key) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(OUTBOX_STORE, 'readwrite');
+    tx.objectStore(OUTBOX_STORE).delete(key);
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => rej(tx.error);
+  });
+}
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'outbox-sync') {
+    event.waitUntil(flushOutbox());
+  }
+});
+async function flushOutbox() {
+  const out = await getAllOutbox();
+  for (const entry of out) {
+    try {
+      const fd = new FormData();
+      for (const f of entry.formDataFields) {
+        if (f.kind === 'file') {
+          const bytes = atob(f.data);
+          const arr = new Uint8Array(bytes.length);
+          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+          const blob = new Blob([arr], { type: f.type || 'image/png' });
+          fd.append(f.name, blob, f.filename || 'photo.png');
+        } else {
+          fd.append(f.name, f.value);
+        }
+      }
+      const headers = entry.token ? { Authorization: `Bearer ${entry.token}` } : {};
+      const resp = await fetch(entry.url, { method: entry.method, body: fd, headers });
+      if (resp && resp.ok) {
+        await deleteOutboxKey(entry.cid);
+      }
+    } catch (e) {
+      return;
+    }
+  }
+}
+self.addEventListener('message', (evt) => {
+  if (!evt.data) return;
+  if (evt.data === 'flush-outbox') {
+    evt.waitUntil(flushOutbox());
+  }
+});
+self.addEventListener('push', (event) => {
+  let payload = { title: 'Story App', options: { body: 'Ada story baru', icon: '/icons/icon-192.png', url: '/' } };
+  try { payload = event.data.json(); } catch (e) {}
+  const options = payload.options || { body: payload.body || 'Ada story baru', icon: '/icons/icon-192.png', data: payload.url || '/' };
+  event.waitUntil(self.registration.showNotification(payload.title || 'Story App', options));
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = event.notification.data || '/';
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
+    for (const w of windows) {
+      if (w.url.includes(url)) {
+        w.focus();
+        return;
+      }
+    }
+    if (clients.openWindow) return clients.openWindow(url);
+  }));
 });
 
-self.addEventListener('notificationclick', (event) => {
-    event.notification.close();
-    const data = event.notification.data || {};
-    const urlToOpen = data.url || '/#/';
-    event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-        for (let client of windowClients) {
-            if (client.url.includes('/') && 'focus' in client) {
-            client.focus();
-            client.postMessage({ type: 'navigate', url: urlToOpen });
-            return client.navigate(urlToOpen).catch(()=>client);
-            }
-        }
-        if (clients.openWindow) return clients.openWindow(urlToOpen);
-        })
-    );
-});

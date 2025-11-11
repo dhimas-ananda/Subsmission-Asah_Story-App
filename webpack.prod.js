@@ -3,30 +3,26 @@ const common = require('./webpack.common.js');
 const { merge } = require('webpack-merge');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
-const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = merge(common, {
   mode: 'production',
-
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'app.bundle.js',         
-    chunkFilename: '[name].chunk.js',
-    publicPath: '/',                   
-    clean: false,                      
+    filename: '[name].[contenthash].js',
+    chunkFilename: '[name].[contenthash].js',
+    publicPath: '/', 
   },
-
   module: {
     rules: [
       {
-        test: /\.css$/i,
+        test: /\.css$/,
         use: [
           MiniCssExtractPlugin.loader,
           'css-loader',
         ],
       },
       {
-        test: /\.js$/i,
+        test: /\.js$/,
         exclude: /node_modules/,
         use: [
           {
@@ -39,27 +35,24 @@ module.exports = merge(common, {
       },
     ],
   },
-
-  plugins: [
-    new CleanWebpackPlugin(),
-
-    new MiniCssExtractPlugin({
-      filename: 'styles.css',
-      chunkFilename: '[id].css',
-    }),
-
-    new CopyPlugin({
-      patterns: [
-        { from: path.resolve(__dirname, 'src', 'public'), to: path.resolve(__dirname, 'dist') },
-      ],
-    }),
-  ],
-
   optimization: {
     splitChunks: {
       chunks: 'all',
-      name: false,
+      cacheGroups: {
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          chunks: 'all',
+        },
+      },
     },
-    runtimeChunk: false,
+    runtimeChunk: 'single',
   },
+  plugins: [
+    new CleanWebpackPlugin(),
+    new MiniCssExtractPlugin({
+      filename: '[name].[contenthash].css',
+      chunkFilename: '[id].[contenthash].css'
+    }),
+  ],
 });

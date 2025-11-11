@@ -13,6 +13,14 @@
   --focus-ring: rgba(11,100,214,0.18);
 }
 
+::view-transition-old(*) { opacity: 1; transform: translateY(0); }
+::view-transition-new(*) { opacity: 0; transform: translateY(8px); }
+@layer transitions {
+  ::view-transition-old(*) { transition: opacity 320ms ease, transform 320ms ease; }
+  ::view-transition-new(*) { transition: opacity 320ms ease, transform 320ms ease; }
+}
+
+
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
