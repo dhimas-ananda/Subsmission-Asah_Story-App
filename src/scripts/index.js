@@ -1,7 +1,10 @@
-import '../styles/styles.css';
-import 'leaflet/dist/leaflet.css';
 import './app.js';
 import './sw-register.js';
+import 'leaflet/dist/leaflet.css';
+import '../styles/styles.css';
+import { subscribePush, unsubscribePush } from './services/push-service.js';
+import StoryModel from './models/story-model.js';
+
 
 let deferredPrompt = null;
 const isLocalhost = Boolean(
@@ -31,52 +34,6 @@ function safeGet(selector) {
   try { return document.querySelector(selector); } catch (e) { return null; }
 }
 
-async function initPushToggle() {
-  const pushToggle = safeGet('#push-toggle');
-  if (!pushToggle) return;
-  try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      pushToggle.style.display = 'none';
-      return;
-    }
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    pushToggle.innerText = sub ? 'Disable Notifications' : 'Enable Notifications';
-    pushToggle.style.display = 'inline-block';
-    pushToggle.addEventListener('click', async () => {
-      const token = localStorage.getItem('authToken');
-      if (!token) { alert('Silakan login terlebih dahulu'); return; }
-      try {
-        const mod = await import('./services/push-service.js');
-        const currentSub = await reg.pushManager.getSubscription();
-        if (currentSub) {
-          await mod.unsubscribePush(token);
-          pushToggle.innerText = 'Enable Notifications';
-        } else {
-          await mod.subscribePush(token);
-          pushToggle.innerText = 'Disable Notifications';
-        }
-      } catch (err) {
-        console.error(err);
-        alert('Gagal mengubah preferensi notifikasi');
-      }
-    });
-  } catch (err) {
-    pushToggle.style.display = 'none';
-  }
-}
-
-window.addEventListener('load', async () => {
-  try { await initPushToggle(); } catch (e) {}
-  const main = document.getElementById('main-content-inner') || document.getElementById('app') || document.body;
-  if (!document.getElementById('bootstrap-fallback') && (!window.App && !window.Router)) {
-    const fallback = document.createElement('div');
-    fallback.id = 'bootstrap-fallback';
-    fallback.innerHTML = '<h2>App belum dimulai</h2><p>Periksa console untuk error atau pastikan App.init() atau Router.start() dipanggil.</p>';
-    main.appendChild(fallback);
-  }
-});
-
 window.addEventListener('online', () => {
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
@@ -89,6 +46,95 @@ if (typeof module !== 'undefined' && module.hot && module.hot.accept) {
   module.hot.accept();
 }
 
-import { subscribePush, unsubscribePush } from './services/push-service.js';
 window.subscribePush = subscribePush;
 window.unsubscribePush = unsubscribePush;
+
+async function initPushToggle() {
+  const btn = document.getElementById('push-toggle');
+  if (!btn) return;
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      btn.style.display = 'none';
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    btn.innerText = sub ? 'Disable Notifications' : 'Enable Notifications';
+    btn.addEventListener('click', async () => {
+      const token = localStorage.getItem('authToken') || '';
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const current = await reg.pushManager.getSubscription();
+        if (current) {
+          await unsubscribePush(token);
+          btn.innerText = 'Enable Notifications';
+          alert('Berhenti berlangganan notifikasi');
+        } else {
+          await subscribePush(token);
+          btn.innerText = 'Disable Notifications';
+          alert('Berhasil berlangganan notifikasi');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Gagal mengubah status notifikasi: ' + (e && e.message));
+      }
+    });
+  } catch (e) {
+    btn.style.display = 'none';
+  }
+}
+
+window.addEventListener('load', async () => {
+  try { await initPushToggle(); } catch (e) {}
+});
+
+if ('serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistrations === 'function') {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    console.log('SW registrations:', regs);
+  }).catch(err => console.warn('getRegistrations failed', err));
+} else {
+  console.log('serviceWorker API not available or getRegistrations not a function');
+}
+
+
+async function showAppNotification(title, body, url) {
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      const options = { body: body || '', icon: '/assets/icon-192.png', badge: '/assets/icon-192.png', data: { url: url || '/' }, tag: 'story-app', renotify: true };
+      await reg.showNotification(title || 'Story App', options);
+      return;
+    }
+    if (window.Notification && Notification.permission === 'granted') {
+      new Notification(title || 'Story App', { body: body || '', icon: '/assets/icon-192.png' });
+    } else if (window.Notification && Notification.permission !== 'denied') {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') new Notification(title || 'Story App', { body: body || '', icon: '/assets/icon-192.png' });
+    }
+  } catch (e) { console.error('showAppNotification error', e); }
+}
+
+window.addEventListener('load', () => {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    if (regs && regs.length) showAppNotification('Story App', 'Service Worker aktif');
+  }).catch(()=>{});
+});
+
+window.addEventListener('login:success', (e) => {
+  const d = e.detail || {};
+  try { showAppNotification('Story App', `Selamat datang, ${d.username || 'user'}`, '/'); } catch(e){}
+});
+
+window.addEventListener('register:success', (e) => {
+  showAppNotification('Story App', 'Pendaftaran berhasil', '/login');
+});
+
+window.addEventListener('auth:changed', (e) => {
+  const detail = e.detail;
+  if (!detail) showAppNotification('Story App', 'Logout berhasil', '/');
+});
+
+window.addEventListener('story:created', (e) => {
+  const detail = e.detail || {};
+  showAppNotification('Story App', 'Story berhasil dikirim', '/');
+});

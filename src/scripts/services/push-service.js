@@ -42,15 +42,10 @@ export async function subscribePush(token) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) {
-      throw new Error(`Subscribe API failed ${res.status} ${await res.text()}`);
-    }
+    if (!res.ok) throw new Error(`Subscribe API failed ${res.status} ${await res.text()}`);
     return existing;
   }
-  const sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-  });
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
   const payload = normalizeSubscription(sub);
   const res = await fetch('https://story-api.dicoding.dev/v1/notifications/subscribe', {
     method: 'POST',
@@ -76,8 +71,6 @@ export async function unsubscribePush(token) {
     body: JSON.stringify(payload)
   });
   await sub.unsubscribe();
-  if (!res.ok) {
-    throw new Error(`Unsubscribe API failed ${res.status} ${await res.text()}`);
-  }
+  if (!res.ok) throw new Error(`Unsubscribe API failed ${res.status} ${await res.text()}`);
   return true;
 }

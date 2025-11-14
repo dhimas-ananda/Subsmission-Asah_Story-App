@@ -1,43 +1,62 @@
+import L from 'leaflet';
 export default class HomePresenter {
-    constructor({ view, model, router, ui }) {
-        this.view = view;
-        this.model = model;
-        this.router = router;
-        this.ui = ui;
+  constructor({ view, model, ui }) {
+    this._view = view;
+    this._model = model;
+    this._ui = ui;
+    this._map = null;
+    this._markers = [];
+  }
+
+  async init() {
+    if (this._ui && this._ui.showLoading) this._ui.showLoading(true);
+    const stories = await this._model.fetchStories({ size: 100, location: 1 });
+    if (this._ui && this._ui.showLoading) this._ui.showLoading(false);
+    if (this._view && typeof this._view.renderList === 'function') {
+        this._view.renderList(stories);
     }
-    async init() {
-        this.ui.showLoading(true);
-        try {
-        this.view.bindEvents();
-        this.view.initMap();
-        const token = localStorage.getItem('authToken') || null;
-        const data = await this.model.fetchStories(token);
+    this._view.renderList(stories);
+    this._initMap(stories);
+    this._bindListClicks();
+  }
 
-        if (!data || data.error) {
-            const msg = (data && data.message) ? data.message : 'Gagal memuat story. Silakan login.';
-            this.ui.showAlert(msg);
-            this.view.showStories([]);
-            return;
-        }
-
-        const raw = data.listStory || data.list || [];
-        const items = raw.map((i) => ({
-            id: i.id || i.storyId || i._id || '',
-            name: i.name || '',
-            description: i.description || '',
-            photoUrl: i.photoUrl || i.photo || i.photo_url || '',
-            lat: (i.lat !== undefined && i.lon !== undefined) ? Number(i.lat) : (i.lat ? Number(i.lat) : (i.latitude ? Number(i.latitude) : null)),
-            lon: (i.lon !== undefined && i.lat !== undefined) ? Number(i.lon) : (i.lon ? Number(i.lon) : (i.longitude ? Number(i.longitude) : null)),
-            createdAt: i.createdAt || i.created_at || '',
-        }));
-
-        this.view.showStories(items);
-        this.view.placeMarkers(items);
-        } catch (err) {
-        this.ui.showAlert('Terjadi kesalahan saat memuat story');
-        console.error(err);
-        } finally {
-        this.ui.showLoading(false);
-        }
+  _initMap(stories = []) {
+    const container = this._view.getMapContainer();
+    if (!container) return;
+    if (this._map) {
+      try { this._map.remove(); } catch (e) {}
+      this._map = null;
     }
+    this._map = L.map(container, { center: [0, 0], zoom: 2 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(this._map);
+    if (stories && stories.length) {
+      const bounds = [];
+      stories.forEach(s => {
+        if (s.lat != null && s.lon != null) {
+          const icon = window.DEFAULT_LEAFLET_ICON || undefined;
+          const marker = L.marker([s.lat, s.lon], { icon }).addTo(this._map);
+          marker.bindPopup(`<strong>${s.name}</strong><p>${s.description}</p><img src="${s.photoUrl}" alt="${s.name}" style="width:100px;height:auto;display:block;margin-top:6px"/>`);
+          this._markers.push(marker);
+          bounds.push([s.lat, s.lon]);
+        }
+      });
+      if (bounds.length) this._map.fitBounds(bounds, { padding: [40, 40] });
+    }
+    setTimeout(()=>{ try { this._map.invalidateSize(); } catch(e){} }, 200);
+  }
+
+  _bindListClicks() {
+    const list = this._view.getListContainer();
+    if (!list) return;
+    list.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-story-id]');
+      if (!el) return;
+      const id = el.getAttribute('data-story-id');
+      const idx = this._view._stories.findIndex(s => s.id === id);
+      if (idx >= 0 && this._markers[idx]) {
+        this._markers[idx].openPopup();
+        this._map.setView(this._markers[idx].getLatLng(), 14);
+      }
+    });
+  }
 }

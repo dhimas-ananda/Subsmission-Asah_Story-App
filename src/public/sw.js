@@ -1,165 +1,145 @@
-const API_BASE = 'https://story-api.dicoding.dev/v1';
-const APP_SHELL = 'app-shell-v1';
-const RUNTIME = 'runtime-v1';
-const IMAGE = 'images-v1';
-const OUTBOX_STORE = 'outbox';
-const PRECACHE = ['/', '/index.html', '/app.bundle.js', '/styles.css', '/manifest.json'];
-self.addEventListener('install', (e) => {
+const APP_SHELL_CACHE = 'story-app-shell-v1';
+const RUNTIME_CACHE = 'story-app-runtime-v1';
+const API_CACHE = 'story-app-api-v1';
+const IMAGES_CACHE = 'story-app-images-v1';
+
+const PRECACHE_FILES = [
+  './',
+  './index.html',
+  '../styles/styles.css',
+  './manifest.json',
+  './assets/icon-192.png',
+  './assets/icon-512.png'
+];
+
+self.addEventListener('install', (event) => {
   self.skipWaiting();
-  e.waitUntil(caches.open(APP_SHELL).then(c => c.addAll(PRECACHE)));
+  event.waitUntil((async () => {
+    const cache = await caches.open(APP_SHELL_CACHE);
+    await Promise.all(PRECACHE_FILES.map(async (req) => {
+      try {
+        const r = await fetch(req, { cache: 'no-store' });
+        if (r && r.ok) {
+          await cache.put(req, r.clone());
+        } else {
+          console.warn('precached resource failed, skipped:', req);
+        }
+      } catch (e) {
+        console.warn('precached fetch error:', req, e && e.message);
+      }
+    }));
+  })());
 });
-self.addEventListener('activate', (e) => {
-  e.waitUntil((async () => {
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => ![APP_SHELL, RUNTIME, IMAGE].includes(k)).map(k => caches.delete(k)));
+    await Promise.all(keys.map(k => {
+      if (![APP_SHELL_CACHE, RUNTIME_CACHE, API_CACHE, IMAGES_CACHE].includes(k)) {
+        return caches.delete(k);
+      }
+      return Promise.resolve();
+    }));
     await self.clients.claim();
   })());
 });
+
+async function fetchAndCache(request, cacheName) {
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      const c = await caches.open(cacheName);
+      c.put(request, response.clone());
+    }
+    return response;
+  } catch (e) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    throw e;
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
-  const urls = new URL(event.request.url);
-  if (urls.hostname.includes('tile.openstreetmap.org') || urls.hostname.includes('a.tile.openstreetmap.org')) {
+
+  if (url.origin === 'https://story-api.dicoding.dev') {
+    if (req.method !== 'GET') {
+      event.respondWith(fetch(req).catch(() => new Response(null, { status: 503 })));
+      return;
+    }
     event.respondWith(
-      caches.open('osm-tiles').then(cache => cache.match(event.request).then(resp => resp || fetch(event.request).then(r => { cache.put(event.request, r.clone()); return r; })))
+      fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const clone = res.clone();
+            caches.open(API_CACHE).then(cache => cache.put(req, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
     );
     return;
   }
-  if (req.method === 'GET') {
-    if (req.destination === 'image' || url.pathname.match(/\.(png|jpg|jpeg|svg|webp|gif)$/)) {
-      event.respondWith(caches.open(IMAGE).then(cache => cache.match(req).then(r => r || fetch(req).then(res => { cache.put(req, res.clone()); return res; }))));
+
+  if (url.origin === self.location.origin) {
+    if (req.destination === 'document' || url.pathname.endsWith('.html') || url.pathname === '/') {
+      event.respondWith(
+        caches.match(req).then((cached) => cached || fetch(req).then(r => { caches.open(RUNTIME_CACHE).then(c => c.put(req, r.clone())); return r; }).catch(() => caches.match('./index.html')))
+      );
       return;
     }
-    if (url.pathname.includes('/v1/stories') || url.pathname.includes('/stories')) {
-      event.respondWith(fetch(req).then(res => { const clone = res.clone(); caches.open(RUNTIME).then(c => c.put(req, clone)); return res; }).catch(() => caches.match(req)));
+
+    if (req.destination === 'script' || req.destination === 'style' || /\.(js|css|woff2?|ttf|eot)$/.test(url.pathname)) {
+      event.respondWith(
+        caches.match(req).then((cached) => cached || fetchAndCache(req, RUNTIME_CACHE))
+      );
       return;
     }
-    event.respondWith(caches.match(req).then(r => r || fetch(req).catch(() => caches.match('/index.html'))));
-    return;
+
+    if (req.destination === 'image' || url.pathname.match(/\.(png|jpg|jpeg|gif|webp|svg)$/i)) {
+      event.respondWith(
+        caches.match(req).then((cached) => cached || fetchAndCache(req, IMAGES_CACHE).catch(() => cached))
+      );
+      return;
+    }
   }
-  if (req.method === 'POST' && url.pathname.endsWith('/stories')) {
-    event.respondWith((async () => {
-      try {
-        const networkResp = await fetch(req.clone());
-        return networkResp;
-      } catch (err) {
-        const fd = await req.clone().formData();
-        const fields = [];
-        for (const pair of fd.entries()) {
-          const [name, value] = pair;
-          if (value instanceof File) {
-            const ab = await value.arrayBuffer();
-            let binary = '';
-            const bytes = new Uint8Array(ab);
-            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-            fields.push({ kind: 'file', name, filename: value.name, type: value.type, data: btoa(binary) });
-          } else {
-            fields.push({ kind: 'field', name, value: value.toString() });
-          }
-        }
-        const out = { url: req.url, method: req.method, formDataFields: fields, token: null, createdAt: Date.now() };
-        await storeOutbox(out);
-        if (self.registration.sync) {
-          await self.registration.sync.register('outbox-sync');
-        }
-        return new Response(JSON.stringify({ error: false, message: 'queued-offline' }), { status: 202, headers: { 'Content-Type': 'application/json' } });
-      }
-    })());
-    return;
-  }
+
+  event.respondWith(fetch(req).catch(() => caches.match(req)));
 });
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const rq = indexedDB.open('story-app-db', 1);
-    rq.onupgradeneeded = () => {
-      const db = rq.result;
-      if (!db.objectStoreNames.contains(OUTBOX_STORE)) db.createObjectStore(OUTBOX_STORE, { keyPath: 'cid', autoIncrement: true });
-    };
-    rq.onsuccess = () => resolve(rq.result);
-    rq.onerror = () => reject(rq.error);
-  });
-}
-async function storeOutbox(value) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction(OUTBOX_STORE, 'readwrite');
-    tx.objectStore(OUTBOX_STORE).add(value);
-    tx.oncomplete = () => res(true);
-    tx.onerror = () => rej(tx.error);
-  });
-}
-async function getAllOutbox() {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction(OUTBOX_STORE, 'readonly');
-    const req = tx.objectStore(OUTBOX_STORE).getAll();
-    req.onsuccess = () => res(req.result || []);
-    req.onerror = () => rej(req.error);
-  });
-}
-async function deleteOutboxKey(key) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction(OUTBOX_STORE, 'readwrite');
-    tx.objectStore(OUTBOX_STORE).delete(key);
-    tx.oncomplete = () => res(true);
-    tx.onerror = () => rej(tx.error);
-  });
-}
+
 self.addEventListener('sync', (event) => {
   if (event.tag === 'outbox-sync') {
-    event.waitUntil(flushOutbox());
+    event.waitUntil((async () => {
+      const clientsList = await clients.matchAll({ includeUncontrolled: true });
+      clientsList.forEach(c => c.postMessage({ type: 'FLUSH_OUTBOX' }));
+    })());
   }
 });
-async function flushOutbox() {
-  const out = await getAllOutbox();
-  for (const entry of out) {
-    try {
-      const fd = new FormData();
-      for (const f of entry.formDataFields) {
-        if (f.kind === 'file') {
-          const bytes = atob(f.data);
-          const arr = new Uint8Array(bytes.length);
-          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-          const blob = new Blob([arr], { type: f.type || 'image/png' });
-          fd.append(f.name, blob, f.filename || 'photo.png');
-        } else {
-          fd.append(f.name, f.value);
-        }
-      }
-      const headers = entry.token ? { Authorization: `Bearer ${entry.token}` } : {};
-      const resp = await fetch(entry.url, { method: entry.method, body: fd, headers });
-      if (resp && resp.ok) {
-        await deleteOutboxKey(entry.cid);
-      }
-    } catch (e) {
-      return;
-    }
-  }
-}
-self.addEventListener('message', (evt) => {
-  if (!evt.data) return;
-  if (evt.data === 'flush-outbox') {
-    evt.waitUntil(flushOutbox());
-  }
-});
+
 self.addEventListener('push', (event) => {
-  let payload = { title: 'Story App', options: { body: 'Ada story baru', icon: '/icons/icon-192.png', url: '/' } };
+  let payload = { title: 'Story App', options: { body: 'Ada story baru', icon: './assets/icon-192.png', data: { url: '/' } } };
   try { payload = event.data.json(); } catch (e) {}
-  const options = payload.options || { body: payload.body || 'Ada story baru', icon: '/icons/icon-192.png', data: payload.url || '/' };
-  event.waitUntil(self.registration.showNotification(payload.title || 'Story App', options));
+  const title = payload.title || 'Story App';
+  const options = payload.options || {
+    body: payload.body || 'Ada story baru',
+    icon: payload.icon || './assets/icon-192.png',
+    badge: payload.badge || './assets/icon-192.png',
+    data: payload.data || { url: '/' },
+    timestamp: Date.now()
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
 });
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data || '/';
-  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
-    for (const w of windows) {
-      if (w.url.includes(url)) {
-        w.focus();
-        return;
+  const url = (event.notification && event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cList) => {
+    for (const c of cList) {
+      if (c.url.includes(url)) {
+        return c.focus();
       }
     }
     if (clients.openWindow) return clients.openWindow(url);
   }));
 });
-
