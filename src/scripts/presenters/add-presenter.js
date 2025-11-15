@@ -14,7 +14,6 @@ export default class AddPresenter {
     this._submitting = false;
     this._observer = null;
     this._mapInitialized = false;
-    this._invalidateTimer = null;
   }
 
   init() {
@@ -28,61 +27,44 @@ export default class AddPresenter {
   _bind() {
     if (this._bound) return;
     this._bound = true;
-
-    const fileInput = this._view && typeof this._view.getFileInput === 'function' ? this._view.getFileInput() : null;
-    const form = this._view && typeof this._view.getForm === 'function' ? this._view.getForm() : null;
-    if (fileInput) fileInput.addEventListener('change', (e) => this._onFileChange(e));
-    if (form) form.addEventListener('submit', (e) => this._onSubmit(e));
-
+    const fileInput = this._view.getFileInput && this._view.getFileInput();
+    const form = this._view.getForm && this._view.getForm();
+    if (fileInput) fileInput.addEventListener('change', this._onFileChange.bind(this));
+    if (form) form.addEventListener('submit', this._onSubmit.bind(this));
     const rootContainer = document.getElementById('main-content-inner') || document.body;
-    this._rootClickHandler = (e) => {
-      const cameraBtn = e.target && e.target.closest && e.target.closest('#camera-btn');
-      const cancelBtn = e.target && e.target.closest && e.target.closest('#cancel-camera');
-      const captureBtn = e.target && e.target.closest && e.target.closest('#capture-btn');
-      if (cameraBtn) {
-        e.preventDefault();
-        this._openCamera();
-      } else if (cancelBtn) {
-        e.preventDefault();
-        this._stopCamera();
-      } else if (captureBtn) {
-        e.preventDefault();
-        this._onCaptureClick();
-      }
-    };
-    rootContainer.addEventListener('click', this._rootClickHandler);
-    this._hashChangeHandler = () => this._checkMapVisibility();
-    this._visibilityHandler = () => this._checkMapVisibility();
-    window.addEventListener('hashchange', this._hashChangeHandler);
-    window.addEventListener('visibilitychange', this._visibilityHandler);
+    rootContainer.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!target) return;
+      if (target.matches && target.matches('#camera-btn')) { e.preventDefault(); this._openCamera(); }
+      else if (target.matches && target.matches('#cancel-camera')) { e.preventDefault(); this._stopCamera(); }
+      else if (target.matches && target.matches('#capture-btn')) { e.preventDefault(); this._onCaptureClick(); }
+    });
+    window.addEventListener('hashchange', () => this._checkMapVisibility());
+    window.addEventListener('visibilitychange', () => this._checkMapVisibility());
   }
 
   _onFileChange(e) {
-    const file = e && e.target && e.target.files && e.target.files[0];
+    const file = e.target && e.target.files && e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      if (this._view && typeof this._view.showPreview === 'function') this._view.showPreview(reader.result);
-    };
+    reader.onload = () => { if (this._view && this._view.showPreview) this._view.showPreview(reader.result); };
     reader.readAsDataURL(file);
   }
 
   async _openCamera() {
     try {
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-        const msg = 'Perangkat tidak mendukung kamera';
-        if (this._ui && typeof this._ui.showAlert === 'function') this._ui.showAlert(msg);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (this._ui && this._ui.showAlert) this._ui.showAlert('Perangkat tidak mendukung kamera');
         return;
       }
-      if (this._stream) this._stopCamera();
-      const constraints = { video: { facingMode: 'environment' } };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       this._stream = stream;
-      if (this._view && typeof this._view.showCameraStream === 'function') this._view.showCameraStream(stream);
+      if (this._view && this._view.showCameraStream) this._view.showCameraStream(stream);
     } catch (err) {
-      let msg = 'Gagal membuka kamera';
-      if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) msg = 'Izin kamera ditolak. Periksa permission.';
-      if (this._ui && typeof this._ui.showAlert === 'function') this._ui.showAlert(msg);
+      if (this._ui && this._ui.showAlert) {
+        if (err && err.name === 'NotAllowedError') this._ui.showAlert('Izin kamera ditolak. Periksa permission.');
+        else this._ui.showAlert('Gagal membuka kamera');
+      }
     }
   }
 
@@ -98,17 +80,16 @@ export default class AddPresenter {
       canvas.toBlob((blob) => {
         if (!blob) return;
         const file = new File([blob], `capture-${Date.now()}.png`, { type: 'image/png' });
-        const input = this._view && typeof this._view.getFileInput === 'function' ? this._view.getFileInput() : null;
+        const input = this._view.getFileInput && this._view.getFileInput();
         if (input) {
           const dt = new DataTransfer();
           dt.items.add(file);
           input.files = dt.files;
           input.dispatchEvent(new Event('change', { bubbles: true }));
-        } else {
-          const reader = new FileReader();
-          reader.onload = () => { if (this._view && typeof this._view.showPreview === 'function') this._view.showPreview(reader.result); };
-          reader.readAsDataURL(file);
         }
+        const reader = new FileReader();
+        reader.onload = () => { if (this._view && this._view.showPreview) this._view.showPreview(reader.result); };
+        reader.readAsDataURL(file);
       }, 'image/png');
     } catch (e) {}
   }
@@ -118,21 +99,18 @@ export default class AddPresenter {
       try { this._stream.getTracks().forEach(t => t.stop()); } catch (e) {}
       this._stream = null;
     }
-    if (this._view && typeof this._view.hideCameraStream === 'function') this._view.hideCameraStream();
+    if (this._view && this._view.hideCameraStream) this._view.hideCameraStream();
   }
 
   _observeMapContainer() {
-    const container = this._view && typeof this._view.getMapContainer === 'function' ? this._view.getMapContainer() : null;
-    if (!container) {
-      setTimeout(() => this._observeMapContainer(), 150);
-      return;
-    }
+    const container = this._view && this._view.getMapContainer && this._view.getMapContainer();
+    if (!container) { setTimeout(() => this._observeMapContainer(), 150); return; }
     if (this._mapInitialized) return;
     try {
       this._observer = new IntersectionObserver((entries) => {
         for (const ent of entries) {
           if (ent.isIntersecting) {
-            if (this._observer) { try { this._observer.disconnect(); } catch(e) {} }
+            try { this._observer.disconnect(); } catch(e) {}
             this._observer = null;
             this._initMap();
             break;
@@ -147,27 +125,22 @@ export default class AddPresenter {
 
   _checkMapVisibility() {
     if (!this._map) return;
-    clearTimeout(this._invalidateTimer);
-    this._invalidateTimer = setTimeout(() => {
-      try { this._map.invalidateSize(); } catch (e) {}
-    }, 200);
+    setTimeout(() => { try { this._map.invalidateSize(); } catch (e) {} }, 200);
   }
 
   _initMap() {
     if (this._mapInitialized) return;
-    const container = this._view && typeof this._view.getMapContainer === 'function' ? this._view.getMapContainer() : null;
+    const container = this._view && this._view.getMapContainer && this._view.getMapContainer();
     if (!container) return;
     try {
       this._map = L.map(container, { center: [0, 0], zoom: 2 });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(this._map);
       this._map.on('click', (e) => {
-        const { lat, lng } = e.latlng || {};
-        if (typeof lat !== 'number' || typeof lng !== 'number') return;
-        if (this._marker) try { this._map.removeLayer(this._marker); } catch (e) {}
-        const icon = window.DEFAULT_LEAFLET_ICON || (L && L.icon ? L.icon({ iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png', iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png', shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png', iconSize: [25,41], iconAnchor: [12,41] }) : null);
-        try { this._marker = L.marker([lat, lng], { icon }).addTo(this._map); } catch(e) {}
-        if (this._view && typeof this._view.setLatInput === 'function') this._view.setLatInput(lat);
-        if (this._view && typeof this._view.setLonInput === 'function') this._view.setLonInput(lng);
+        const { lat, lng } = e.latlng;
+        if (this._marker) this._map.removeLayer(this._marker);
+        this._marker = L.marker([lat, lng], { icon: window.DEFAULT_LEAFLET_ICON }).addTo(this._map);
+        if (this._view && this._view.setLatInput) this._view.setLatInput(lat);
+        if (this._view && this._view.setLonInput) this._view.setLonInput(lng);
       });
       setTimeout(() => { try { this._map.invalidateSize(); } catch (e) {} }, 200);
       this._mapInitialized = true;
@@ -178,41 +151,41 @@ export default class AddPresenter {
     e.preventDefault();
     if (this._submitting) return;
     this._submitting = true;
-    if (this._ui && typeof this._ui.showLoading === 'function') this._ui.showLoading(true);
-    const form = this._view && typeof this._view.getForm === 'function' ? this._view.getForm() : null;
-    const fd = form ? new FormData(form) : new FormData();
+    if (this._ui && this._ui.showLoading) this._ui.showLoading(true);
+    const form = this._view && this._view.getForm && this._view.getForm();
+    const fd = new FormData(form || new HTMLFormElement());
     const token = localStorage.getItem('authToken');
     try {
       if (!navigator.onLine) {
         await queueStoryForSync(fd, token);
-        if (this._ui && typeof this._ui.showToast === 'function') this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
+        if (this._ui && this._ui.showToast) this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
         location.hash = '#/';
         return;
       }
       const resp = await this._model.createStory(fd, token);
       if (resp && resp.error === false) {
-        if (this._ui && typeof this._ui.showToast === 'function') this._ui.showToast('Berhasil menambahkan story');
+        if (this._ui && this._ui.showToast) this._ui.showToast('Berhasil menambahkan story');
         location.hash = '#/';
         return;
       } else {
         if (!navigator.onLine) {
           await queueStoryForSync(fd, token);
-          if (this._ui && typeof this._ui.showToast === 'function') this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
+          if (this._ui && this._ui.showToast) this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
           location.hash = '#/';
           return;
         }
-        if (this._ui && typeof this._ui.showAlert === 'function') this._ui.showAlert((resp && resp.message) || 'Gagal menambahkan story');
+        if (this._ui && this._ui.showAlert) this._ui.showAlert((resp && resp.message) || 'Gagal menambahkan story');
       }
     } catch (err) {
       if (!navigator.onLine) {
         await queueStoryForSync(fd, token);
-        if (this._ui && typeof this._ui.showToast === 'function') this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
+        if (this._ui && this._ui.showToast) this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
         location.hash = '#/';
       } else {
-        if (this._ui && typeof this._ui.showAlert === 'function') this._ui.showAlert('Terjadi kesalahan');
+        if (this._ui && this._ui.showAlert) this._ui.showAlert('Terjadi kesalahan');
       }
     } finally {
-      if (this._ui && typeof this._ui.showLoading === 'function') this._ui.showLoading(false);
+      if (this._ui && this._ui.showLoading) this._ui.showLoading(false);
       this._submitting = false;
     }
   }
@@ -221,13 +194,6 @@ export default class AddPresenter {
     this._stopCamera();
     if (this._observer) { try { this._observer.disconnect(); } catch (e) {} this._observer = null; }
     if (this._map) { try { this._map.remove(); } catch (e) {} this._map = null; this._mapInitialized = false; this._marker = null; }
-    if (this._rootClickHandler) {
-      const rootContainer = document.getElementById('main-content-inner') || document.body;
-      try { rootContainer.removeEventListener('click', this._rootClickHandler); } catch (e) {}
-      this._rootClickHandler = null;
-    }
-    if (this._hashChangeHandler) { try { window.removeEventListener('hashchange', this._hashChangeHandler); } catch(e) {} this._hashChangeHandler = null; }
-    if (this._visibilityHandler) { try { window.removeEventListener('visibilitychange', this._visibilityHandler); } catch(e) {} this._visibilityHandler = null; }
     this._bound = false;
   }
 }
