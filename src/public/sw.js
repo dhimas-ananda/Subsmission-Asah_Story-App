@@ -20,17 +20,48 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (evt) => {
   const req = evt.request;
   const url = new URL(req.url);
+
   if (req.method === 'GET') {
     if (url.origin === location.origin && (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.html'))) {
-      evt.respondWith(caches.match(req).then(r => r || fetch(req).then(res => { caches.open(RUNTIME).then(c => c.put(req, res.clone())); return res; })).catch(()=>caches.match('/index.html')));
+      evt.respondWith(
+        caches.match(req).then(r => {
+          if (r) return r;
+          return fetch(req).then(res => {
+            const resClone = res.clone();
+            caches.open(RUNTIME).then(c => c.put(req, resClone));
+            return res;
+          });
+        }).catch(() => caches.match('/index.html'))
+      );
       return;
     }
+
     if (url.origin.includes('story-api.dicoding.dev')) {
-      evt.respondWith(fetch(req).then(r => { if (r.ok) { const c = r.clone(); caches.open(API_CACHE).then(cache=>cache.put(req, c)); } return r; }).catch(()=>caches.match(req)));
+      evt.respondWith(
+        fetch(req).then(r => {
+          if (r.ok) {
+            const rClone = r.clone();
+            caches.open(API_CACHE).then(cache => cache.put(req, rClone));
+          }
+          return r;
+        }).catch(() => caches.match(req))
+      );
       return;
     }
+
     if (req.destination === 'image' || url.pathname.match(/\.(png|jpg|jpeg|webp|svg|gif)$/)) {
-      evt.respondWith(caches.open('images').then(cache => cache.match(req).then(r => r || fetch(req).then(res => { cache.put(req, res.clone()); return res; }))));
+      evt.respondWith(
+        caches.open('images').then(cache => 
+          cache.match(req).then(r => {
+            if (r) return r;
+            return fetch(req).then(res => {
+              const resClone = res.clone();
+              cache.put(req, resClone);
+              return res;
+            });
+          })
+        )
+      );
       return;
     }
   }

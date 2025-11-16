@@ -3,10 +3,11 @@ import './sw-register.js';
 import 'leaflet/dist/leaflet.css';
 import '../styles/styles.css';
 import { subscribePush, unsubscribePush } from './services/push-service.js';
+import { showAppNotification, initPushButton } from './notification.js';
 import StoryModel from './models/story-model.js';
 
-
 let deferredPrompt = null;
+
 const isLocalhost = Boolean(
   location.hostname === 'localhost' ||
   location.hostname === '127.0.0.1' ||
@@ -19,19 +20,27 @@ window.addEventListener('beforeinstallprompt', (e) => {
   const btn = document.getElementById('install-btn');
   if (btn) {
     btn.style.display = 'inline-block';
+    btn.setAttribute('aria-hidden', 'false');
     btn.addEventListener('click', async () => {
       try {
         deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-      } catch (err) {}
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`User response to install prompt: ${outcome}`);
+      } catch (err) {
+        console.error('Install prompt error:', err);
+      }
       deferredPrompt = null;
       btn.style.display = 'none';
+      btn.setAttribute('aria-hidden', 'true');
     }, { once: true });
   }
 });
-
 function safeGet(selector) {
-  try { return document.querySelector(selector); } catch (e) { return null; }
+  try { 
+    return document.querySelector(selector); 
+  } catch (e) { 
+    return null; 
+  }
 }
 
 window.addEventListener('online', () => {
@@ -39,7 +48,9 @@ window.addEventListener('online', () => {
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage('flush-outbox');
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error('Error flushing outbox:', err);
+  }
 });
 
 if (typeof module !== 'undefined' && module.hot && module.hot.accept) {
@@ -49,92 +60,128 @@ if (typeof module !== 'undefined' && module.hot && module.hot.accept) {
 window.subscribePush = subscribePush;
 window.unsubscribePush = unsubscribePush;
 
-async function initPushToggle() {
-  const btn = document.getElementById('push-toggle');
-  if (!btn) return;
-  try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      btn.style.display = 'none';
-      return;
-    }
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    btn.innerText = sub ? 'Disable Notifications' : 'Enable Notifications';
-    btn.addEventListener('click', async () => {
-      const token = localStorage.getItem('authToken') || '';
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        const current = await reg.pushManager.getSubscription();
-        if (current) {
-          await unsubscribePush(token);
-          btn.innerText = 'Enable Notifications';
-          alert('Berhenti berlangganan notifikasi');
-        } else {
-          await subscribePush(token);
-          btn.innerText = 'Disable Notifications';
-          alert('Berhasil berlangganan notifikasi');
-        }
-      } catch (e) {
-        console.error(e);
-        alert('Gagal mengubah status notifikasi: ' + (e && e.message));
-      }
-    });
-  } catch (e) {
-    btn.style.display = 'none';
-  }
-}
-
-window.addEventListener('load', async () => {
-  try { await initPushToggle(); } catch (e) {}
-});
-
-if ('serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistrations === 'function') {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    console.log('SW registrations:', regs);
-  }).catch(err => console.warn('getRegistrations failed', err));
-} else {
-  console.log('serviceWorker API not available or getRegistrations not a function');
-}
-
-
-async function showAppNotification(title, body, url) {
+window.addEventListener('DOMContentLoaded', async () => {
   try {
     if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.ready;
-      const options = { body: body || '', icon: '/assets/icon-192.png', badge: '/assets/icon-192.png', data: { url: url || '/' }, tag: 'story-app', renotify: true };
-      await reg.showNotification(title || 'Story App', options);
-      return;
+      await navigator.serviceWorker.ready;
+      console.log('Service Worker ready');
     }
-    if (window.Notification && Notification.permission === 'granted') {
-      new Notification(title || 'Story App', { body: body || '', icon: '/assets/icon-192.png' });
-    } else if (window.Notification && Notification.permission !== 'denied') {
-      const perm = await Notification.requestPermission();
-      if (perm === 'granted') new Notification(title || 'Story App', { body: body || '', icon: '/assets/icon-192.png' });
-    }
-  } catch (e) { console.error('showAppNotification error', e); }
-}
-
-window.addEventListener('load', () => {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    if (regs && regs.length) showAppNotification('Story App', 'Service Worker aktif');
-  }).catch(()=>{});
+    
+    await initPushButton();
+    
+  } catch (e) {
+    console.error('Initialization error:', e);
+  }
 });
 
-window.addEventListener('login:success', (e) => {
+window.addEventListener('load', async () => {
+  try {
+    if ('serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistrations === 'function') {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      console.log('SW registrations:', regs);
+      
+      if (regs && regs.length > 0) {
+        await showAppNotification('Story App', {
+          body: 'Service Worker aktif dan siap digunakan',
+          icon: '/assets/logo.png',
+          badge: '/assets/logo.png',
+          tag: 'sw-active'
+        });
+      }
+    } else {
+      console.log('serviceWorker API not available or getRegistrations not a function');
+    }
+  } catch (err) {
+    console.warn('Load event error:', err);
+  }
+});
+
+window.addEventListener('login:success', async (e) => {
   const d = e.detail || {};
-  try { showAppNotification('Story App', `Selamat datang, ${d.username || 'user'}`, '/'); } catch(e){}
+  try {
+    await showAppNotification('Story App', {
+      body: `Selamat datang, ${d.username || 'user'}!`,
+      icon: '/assets/logo.png',
+      badge: '/assets/logo.png',
+      tag: 'login-success',
+      data: { url: '/' }
+    });
+  } catch (err) {
+    console.error('Login notification error:', err);
+  }
 });
 
-window.addEventListener('register:success', (e) => {
-  showAppNotification('Story App', 'Pendaftaran berhasil', '/login');
+window.addEventListener('register:success', async (e) => {
+  try {
+    await showAppNotification('Story App', {
+      body: 'Pendaftaran berhasil! Silakan login untuk melanjutkan.',
+      icon: '/assets/logo.png',
+      badge: '/assets/logo.png',
+      tag: 'register-success',
+      data: { url: '/login' }
+    });
+  } catch (err) {
+    console.error('Register notification error:', err);
+  }
 });
 
-window.addEventListener('auth:changed', (e) => {
+window.addEventListener('auth:changed', async (e) => {
   const detail = e.detail;
-  if (!detail) showAppNotification('Story App', 'Logout berhasil', '/');
+  if (!detail) {
+    try {
+      await showAppNotification('Story App', {
+        body: 'Logout berhasil. Sampai jumpa lagi!',
+        icon: '/assets/logo.png',
+        badge: '/assets/logo.png',
+        tag: 'logout-success',
+        data: { url: '/' }
+      });
+    } catch (err) {
+      console.error('Logout notification error:', err);
+    }
+  }
 });
 
-window.addEventListener('story:created', (e) => {
+window.addEventListener('story:created', async (e) => {
   const detail = e.detail || {};
-  showAppNotification('Story App', 'Story berhasil dikirim', '/');
+  try {
+    await showAppNotification('Story App', {
+      body: 'Story berhasil dikirim dan telah dipublikasikan!',
+      icon: '/assets/logo.png',
+      badge: '/assets/logo.png',
+      tag: 'story-created',
+      data: { url: '/' }
+    });
+  } catch (err) {
+    console.error('Story created notification error:', err);
+  }
 });
+
+window.addEventListener('story:sync-pending', async (e) => {
+  try {
+    await showAppNotification('Story App', {
+      body: 'Story tersimpan. Akan dikirim saat online.',
+      icon: '/assets/logo.png',
+      badge: '/assets/logo.png',
+      tag: 'story-pending',
+      requireInteraction: true
+    });
+  } catch (err) {
+    console.error('Story sync pending notification error:', err);
+  }
+});
+
+window.addEventListener('story:synced', async (e) => {
+  try {
+    await showAppNotification('Story App', {
+      body: 'Story yang tertunda berhasil dikirim!',
+      icon: '/assets/logo.png',
+      badge: '/assets/logo.png',
+      tag: 'story-synced'
+    });
+  } catch (err) {
+    console.error('Story synced notification error:', err);
+  }
+});
+
+export { showAppNotification };

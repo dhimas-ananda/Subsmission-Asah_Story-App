@@ -6,3 +6,4 @@ dist
 
 # Files
 .env
+build.log
