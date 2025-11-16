@@ -1,80 +1,71 @@
-const API_BASE = 'https://story-api.dicoding.dev/v1';
-
-export async function getVapidKey() {
-  try {
-    const r = await fetch(`${API_BASE}/vapidPublicKey`);
-    if (!r.ok) return null;
-    const d = await r.json();
-    return d && d.value ? d.value : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function normalizeSubscription(sub) {
-  try {
-    const raw = sub.toJSON();
-    const keys = raw.keys || {};
-    return {
-      endpoint: raw.endpoint,
-      keys: {
-        p256dh: keys.p256dh || '',
-        auth: keys.auth || ''
-      }
-    };
-  } catch (e) {
-    return null;
-  }
-}
-
-export async function subscribePush(token) {
-  if (!('serviceWorker' in navigator)) throw new Error('sw not supported');
-
-  if (Notification.permission !== 'granted') {
-    const p = await Notification.requestPermission();
-    if (p !== 'granted') throw new Error('permission-not-granted');
-  }
-
-  const reg = await navigator.serviceWorker.ready;
-  const vapid = await getVapidKey();
-  const convertedVapid = vapid ? urlBase64ToUint8Array(vapid) : null;
-  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: convertedVapid });
-  const payload = normalizeSubscription(sub);
-  if (!payload) throw new Error('bad sub payload');
-
-  const resp = await fetch(`${API_BASE}/notifications/subscribe`, {
-    method: 'POST',
-    headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: `Bearer ${token}` } : {}),
-    body: JSON.stringify(payload)
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(()=>resp.statusText);
-    throw new Error(`subscribe failed: ${resp.status} ${text}`);
-  }
-  return await resp.json();
-}
-
-export async function unsubscribePush(token) {
-  if (!('serviceWorker' in navigator)) throw new Error('sw not supported');
-  const reg = await navigator.serviceWorker.ready;
-  const sub = await reg.pushManager.getSubscription();
-  if (!sub) return null;
-  const payload = normalizeSubscription(sub);
-  const resp = await fetch(`${API_BASE}/notifications/unsubscribe`, {
-    method: 'POST',
-    headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: `Bearer ${token}` } : {}),
-    body: JSON.stringify(payload)
-  });
-  await sub.unsubscribe().catch(()=>{});
-  return resp.ok ? await resp.json() : null;
-}
+const API = 'https://story-api.dicoding.dev/v1';
 
 function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
   return outputArray;
 }
+
+async function getVapidKey() {
+  try {
+    const r = await fetch(`${API}/notifications/vapid`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j && j.publicKey ? j.publicKey : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function subscribePush(token = '') {
+  if (!('Notification' in window)) throw new Error('Notification API not supported');
+  if (Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') throw new Error('permission-not-granted');
+  }
+  const vapid = await getVapidKey();
+  const reg = await navigator.serviceWorker.ready;
+  const options = { userVisibleOnly: true };
+  if (vapid) options.applicationServerKey = urlBase64ToUint8Array(vapid);
+  const sub = await reg.pushManager.subscribe(options);
+
+  const raw = sub.toJSON ? sub.toJSON() : JSON.parse(JSON.stringify(sub));
+  if (raw.expirationTime !== undefined) delete raw.expirationTime;
+  if (raw.options !== undefined) delete raw.options;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const resp = await fetch(`${API}/notifications/subscribe`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(raw)
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(()=>'');
+    throw new Error(`subscribe-failed:${resp.status}:${txt}`);
+  }
+  return raw;
+}
+
+async function unsubscribePush(token = '') {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) return true;
+  const raw = sub.toJSON ? sub.toJSON() : JSON.parse(JSON.stringify(sub));
+  try {
+    await sub.unsubscribe();
+  } catch (e) {}
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  await fetch(`${API}/notifications/unsubscribe`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(raw)
+  }).catch(()=>{});
+  return true;
+}
+
+export { subscribePush, unsubscribePush, urlBase64ToUint8Array };

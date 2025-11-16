@@ -1,37 +1,17 @@
-export async function showAppNotification(title, options = {}) {
+async function showAppNotification(title, options = {}) {
   try {
-    if (typeof Notification === 'undefined') return null;
-
+    if (!('Notification' in window)) return;
     if (Notification.permission !== 'granted') {
       const p = await Notification.requestPermission();
-      if (p !== 'granted') return null;
+      if (p !== 'granted') return;
     }
-
-    let registration = null;
-    try {
-      if (navigator.serviceWorker && typeof navigator.serviceWorker.getRegistrations === 'function') {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        registration = regs && regs.length ? regs[0] : null;
-      } else if (navigator.serviceWorker && typeof navigator.serviceWorker.getRegistration === 'function') {
-        registration = await navigator.serviceWorker.getRegistration();
-      }
-    } catch (e) {
-      registration = null;
+    const reg = await navigator.serviceWorker.ready;
+    if (reg && reg.showNotification) {
+      return reg.showNotification(title, options);
+    } else if (window.registration && window.registration.showNotification) {
+      return window.registration.showNotification(title, options);
     }
-
-    if (registration && typeof registration.showNotification === 'function') {
-      await registration.showNotification(title, options);
-      return true;
-    } else {
-      try {
-        new Notification(title, options);
-        return true;
-      } catch (e) {
-        return null;
-      }
-    }
-  } catch (err) {
-    console.error('showAppNotification error', err);
-    return null;
+  } catch (e) {
+    console.error('showAppNotification error', e);
   }
 }

@@ -9,32 +9,35 @@ async function safeGetRegistrations() {
     if (navigator.serviceWorker && typeof navigator.serviceWorker.getRegistrations === 'function') {
       return await navigator.serviceWorker.getRegistrations();
     }
-    if (navigator.serviceWorker && typeof navigator.serviceWorker.getRegistration === 'function') {
-      const r = await navigator.serviceWorker.getRegistration();
-      return r ? [r] : [];
-    }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('safeGetRegistrations error', e);
+  }
   return [];
 }
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
+    console.warn('ServiceWorker not supported in this browser');
     window.dispatchEvent(new CustomEvent('sw:unsupported'));
     return null;
   }
 
   if (!(location.protocol === 'https:' || isLocalhost)) {
+    console.warn('ServiceWorker registration skipped: insecure context and not localhost');
     window.dispatchEvent(new CustomEvent('sw:skipped-insecure'));
     return null;
   }
 
   try {
     const reg = await navigator.serviceWorker.register('/sw.js');
+    console.log('ServiceWorker registered', reg);
     window.dispatchEvent(new CustomEvent('sw:registered', { detail: reg }));
+
     const regs = await safeGetRegistrations();
-    window.dispatchEvent(new CustomEvent('sw:registrations', { detail: regs }));
+    console.log('existing SW registrations:', regs);
     return reg;
   } catch (err) {
+    console.error('ServiceWorker registration failed', err);
     window.dispatchEvent(new CustomEvent('sw:register-failed', { detail: err }));
     return null;
   }

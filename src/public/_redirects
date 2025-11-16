@@ -1,7 +1,6 @@
-/sw.js           /sw.js           200
+﻿/sw.js           /sw.js           200
 /manifest.json   /manifest.json   200
 /app.bundle.js   /app.bundle.js   200
 /styles.css      /styles.css      200
 /assets/*        /assets/:splat   200
-/icons/*         /icons/:splat    200
 /*               /index.html      200
