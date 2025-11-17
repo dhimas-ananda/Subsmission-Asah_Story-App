@@ -28,7 +28,22 @@ export default class HomePresenter {
       this._map = null;
     }
     this._map = L.map(container, { center: [0, 0], zoom: 2 });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(this._map);
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    });
+    const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: '© OpenTopoMap'
+    });
+
+    const baseMaps = {
+      "OpenStreetMap": osmLayer,
+      "OpenTopoMap": topoLayer
+    };
+    osmLayer.addTo(this._map);
+    L.control.layers(baseMaps).addTo(this._map);
+
     if (stories && stories.length) {
       const bounds = [];
       stories.forEach(s => {
@@ -42,7 +57,8 @@ export default class HomePresenter {
       });
       if (bounds.length) this._map.fitBounds(bounds, { padding: [40, 40] });
     }
-    setTimeout(()=>{ try { this._map.invalidateSize(); } catch(e){} }, 200);
+
+    setTimeout(() => { try { this._map.invalidateSize(); } catch (e) {} }, 200);
   }
 
   _bindListClicks() {

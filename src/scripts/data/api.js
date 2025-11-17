@@ -28,16 +28,36 @@ export async function getStories(token) {
   const params = '?size=100&location=1';
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
   const resp = await fetch(`${BASE}/stories${params}`, { headers });
+
   if (!resp.ok) {
     let text = '';
     try { text = await resp.text(); } catch (e) { text = resp.statusText || 'Error'; }
     return { error: true, status: resp.status, message: text };
   }
+
   try {
     const data = await resp.json();
     return data;
   } catch (e) {
     return { error: true, message: 'Invalid JSON from API' };
+  }
+}
+
+export async function getStoryDetail(storyId, token) {
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const resp = await fetch(`${BASE}/stories/${storyId}`, { headers });
+
+  if (!resp.ok) {
+    let text = '';
+    try { text = await resp.text(); } catch (e) { text = resp.statusText || 'Error'; }
+    throw new Error(text || 'Failed to fetch story detail');
+  }
+
+  try {
+    const data = await resp.json();
+    return data.story;
+  } catch (e) {
+    throw new Error('Invalid JSON from API');
   }
 }
 

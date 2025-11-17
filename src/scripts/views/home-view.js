@@ -26,6 +26,7 @@ export default class HomeView {
   bindEvents() {
     const input = this._el.querySelector('#filter-input');
     if (!input) return;
+
     input.addEventListener('input', (e) => {
       const q = (e.target.value || '').toLowerCase();
       const filtered = this._stories.filter(s => {
@@ -39,12 +40,14 @@ export default class HomeView {
     this._stories = Array.isArray(stories) ? stories : [];
     const container = this.getListContainer();
     if (!container) return;
+
     if (!this._stories.length) {
       container.innerHTML = `<div class="empty">Belum ada story</div>`;
       return;
     }
+
     container.innerHTML = this._stories.map(s => {
-      const created = s.createdAt ? new Date(s.createdAt).toISOString() : '';
+      const created = s.createdAt ? new Date(s.createdAt).toLocaleString('id-ID') : '';
       return `
         <article class="story-item" data-story-id="${s.id || ''}" tabindex="0" role="article" aria-label="Story ${s.name || ''}">
           <img src="${s.photoUrl || '/assets/icon-192.png'}" alt="${s.name || ''}" class="story-thumb" width="80" height="80"/>
@@ -53,6 +56,9 @@ export default class HomeView {
             <div class="story-date">${created}</div>
             <p class="story-desc">${s.description || ''}</p>
           </div>
+          <a href="#/story/${s.id}" class="btn-detail" aria-label="Lihat detail ${s.name || ''}">
+            👁️ Detail
+          </a>
         </article>
       `;
     }).join('');
