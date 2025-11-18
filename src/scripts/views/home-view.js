@@ -7,15 +7,26 @@ export default class HomeView {
   render() {
     const section = document.createElement('section');
     section.innerHTML = `
+      <div id="sync-status" class="sync-status hidden" role="status" aria-live="polite">
+        <span class="sync-icon">🔄</span>
+        <span class="sync-text">
+          Menunggu sinkronisasi: <strong id="sync-count">0</strong> story offline
+        </span>
+        <button id="sync-now-btn" class="btn-sync-now">Sinkronkan Sekarang</button>
+      </div>
+
       <h2>Daftar Story</h2>
+      
       <div class="card">
         <div class="map-wrapper">
           <div id="map-home" class="map-container" role="application" aria-label="Story Map"></div>
         </div>
+        
         <div class="filter-row">
           <label for="filter-input">Filter daftar</label>
           <input id="filter-input" placeholder="Filter nama atau deskripsi" />
         </div>
+        
         <div class="stories-list" aria-live="polite"></div>
       </div>
     `;
@@ -25,15 +36,64 @@ export default class HomeView {
 
   bindEvents() {
     const input = this._el.querySelector('#filter-input');
-    if (!input) return;
-
-    input.addEventListener('input', (e) => {
-      const q = (e.target.value || '').toLowerCase();
-      const filtered = this._stories.filter(s => {
-        return (s.name || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q);
+    if (input) {
+      input.addEventListener('input', (e) => {
+        const q = (e.target.value || '').toLowerCase();
+        const filtered = this._stories.filter(s => {
+          return (s.name || '').toLowerCase().includes(q) || 
+                 (s.description || '').toLowerCase().includes(q);
+        });
+        this.renderList(filtered);
       });
-      this.renderList(filtered);
-    });
+    }
+
+    const syncBtn = this._el.querySelector('#sync-now-btn');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', async () => {
+        if (!navigator.onLine) {
+          if (window.ui && window.ui.showAlert) {
+            window.ui.showAlert('Anda sedang offline. Sinkronisasi akan dilakukan otomatis saat online.');
+          }
+          return;
+        }
+
+        syncBtn.disabled = true;
+        syncBtn.textContent = 'Menyinkronkan...';
+
+        try {
+          const { flushOutboxFromClient } = await import('../services/offline-sync.js');
+          await flushOutboxFromClient();
+          
+          if (window.ui && window.ui.showToast) {
+            window.ui.showToast('Sinkronisasi berhasil');
+          }
+          
+          setTimeout(() => window.location.reload(), 1000);
+        } catch (e) {
+          console.error('Sync error:', e);
+          if (window.ui && window.ui.showAlert) {
+            window.ui.showAlert('Gagal sinkronisasi. Coba lagi.');
+          }
+        } finally {
+          syncBtn.disabled = false;
+          syncBtn.textContent = 'Sinkronkan Sekarang';
+        }
+      });
+    }
+  }
+
+  showSyncStatus(count) {
+    const statusEl = this._el.querySelector('#sync-status');
+    const countEl = this._el.querySelector('#sync-count');
+    
+    if (!statusEl || !countEl) return;
+    
+    if (count > 0) {
+      statusEl.classList.remove('hidden');
+      countEl.textContent = count;
+    } else {
+      statusEl.classList.add('hidden');
+    }
   }
 
   renderList(stories = []) {

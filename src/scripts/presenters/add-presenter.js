@@ -1,5 +1,6 @@
 import L from 'leaflet';
 import { queueStoryForSync } from '../services/offline-sync.js';
+import { ensurePushSubscription } from '../notification.js';
 
 export default class AddPresenter {
   constructor({ view, model, router, ui }) {
@@ -149,43 +150,98 @@ export default class AddPresenter {
 
   async _onSubmit(e) {
     e.preventDefault();
-    if (this._submitting) return;
+
+    if (this._submitting) {
+      console.log('⏳ Already submitting...');
+      return;
+    }
+
     this._submitting = true;
-    if (this._ui && this._ui.showLoading) this._ui.showLoading(true);
+    console.log('📝 Form submit started');
+    console.log('🌐 Online status:', navigator.onLine);
+
     const form = this._view && this._view.getForm && this._view.getForm();
-    const fd = new FormData(form || new HTMLFormElement());
+
+    if (!form) {
+      console.error('❌ Form not found');
+      this._submitting = false;
+      return;
+    }
+
+    const fd = new FormData(form);
     const token = localStorage.getItem('authToken');
+
+    if (!token) {
+      console.error('❌ No auth token');
+      if (this._ui && this._ui.showAlert) {
+        this._ui.showAlert('Login dulu untuk menambah story');
+      }
+      this._submitting = false;
+      location.hash = '#/login';
+      return;
+    }
+
+    console.log('📋 Form data:');
+    for (let [key, value] of fd.entries()) {
+      if (value instanceof File) {
+        console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+      } else {
+        console.log(`  ${key}: ${value}`);
+      }
+    }
+
+    if (navigator.onLine) {
+      try {
+        const { ensurePushSubscription } = await import('../notification.js');
+        await ensurePushSubscription();
+      } catch (e) {
+        console.log('⚠️ Push subscription optional:', e);
+      }
+    }
+
+    if (this._ui && this._ui.showLoading) this._ui.showLoading(true);
+
     try {
-      if (!navigator.onLine) {
-        await queueStoryForSync(fd, token);
-        if (this._ui && this._ui.showToast) this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
-        location.hash = '#/';
-        return;
-      }
+      console.log('🚀 Submitting story via model...');
       const resp = await this._model.createStory(fd, token);
-      if (resp && resp.error === false) {
-        if (this._ui && this._ui.showToast) this._ui.showToast('Berhasil menambahkan story');
-        location.hash = '#/';
-        return;
-      } else {
-        if (!navigator.onLine) {
-          await queueStoryForSync(fd, token);
-          if (this._ui && this._ui.showToast) this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
-          location.hash = '#/';
-          return;
-        }
-        if (this._ui && this._ui.showAlert) this._ui.showAlert((resp && resp.message) || 'Gagal menambahkan story');
-      }
-    } catch (err) {
-      if (!navigator.onLine) {
-        await queueStoryForSync(fd, token);
-        if (this._ui && this._ui.showToast) this._ui.showToast('Tersimpan offline. Akan disinkronkan saat online.');
-        location.hash = '#/';
-      } else {
-        if (this._ui && this._ui.showAlert) this._ui.showAlert('Terjadi kesalahan');
-      }
-    } finally {
+
+      console.log('📡 Model response:', resp);
+
       if (this._ui && this._ui.showLoading) this._ui.showLoading(false);
+
+      if (resp && resp.error === false) {
+        console.log('✅ Story submitted successfully');
+        
+        if (resp.queued) {
+          if (this._ui && this._ui.showToast) {
+            this._ui.showToast('📴 Story tersimpan offline. Akan dikirim saat online.');
+          }
+        } else {
+          if (this._ui && this._ui.showToast) {
+            this._ui.showToast('✅ Story berhasil ditambahkan!');
+          }
+        }
+
+        this._submitting = false;
+        
+        setTimeout(() => {
+          location.hash = '#/';
+        }, 1500);
+        
+        return;
+      }
+
+      throw new Error(resp?.message || 'Gagal menambahkan story');
+
+    } catch (err) {
+      console.error('❌ Submit error:', err);
+
+      if (this._ui && this._ui.showLoading) this._ui.showLoading(false);
+      
+      if (this._ui && this._ui.showAlert) {
+        this._ui.showAlert('Gagal menambahkan story: ' + err.message);
+      }
+
       this._submitting = false;
     }
   }

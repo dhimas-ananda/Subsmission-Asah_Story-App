@@ -92,11 +92,9 @@ export default class StoryDetailView {
     
     if (isBookmarked) {
       btn.classList.add('bookmarked');
-      icon.textContent = '✅';
       text.textContent = 'Tersimpan';
     } else {
       btn.classList.remove('bookmarked');
-      icon.textContent = '🔖';
       text.textContent = 'Simpan';
     }
   }

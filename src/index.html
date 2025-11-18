@@ -17,20 +17,22 @@
 <body>
   <a class="skip-link" href="#main-content-inner">Skip to content</a>
   <header class="header-inner container" role="banner">
-    <div id="site-title"><img src="/assets/logo.png" alt="Story App logo" />Story App</div>
-    <nav id="main-nav" aria-label="Main Navigation">
-      <a href="#/">Home</a>
-      <a href="#/bookmarks">Bookmarks</a>
-      <a href="#/add">Tambah</a>
-      <a href="#/login" id="auth-link">Login</a>
-      <a href="#/register">Register</a>
+    <div id="site-title">
+      <img src="/assets/logo.png" alt="Story App logo" />Story App
+    </div>
+    <nav id="main-nav" aria-label="Main Navigation"></nav>
+    <div class="header-actions">
       <button id="install-btn" style="display:none" aria-hidden="true">Install App</button>
-      <button id="push-toggle">Enable Notifications</button>
-    </nav>
+      <button id="push-toggle" class="btn-push-header">Enable Notifications</button>
+    </div>
   </header>
   <main id="main-content-inner" class="container" role="main"></main>
-  <div id="loading-overlay" aria-hidden="true" class="hidden"><div class="loader" role="status" aria-live="polite">Memproses...</div></div>
-  <footer role="contentinfo"><div class="container">© Story App</div></footer>
+  <div id="loading-overlay" aria-hidden="true" class="hidden">
+    <div class="loader" role="status" aria-live="polite">Memproses...</div>
+  </div>
+  <footer role="contentinfo">
+    <div class="container">© Story App</div>
+  </footer>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>

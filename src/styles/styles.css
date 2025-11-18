@@ -91,7 +91,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.85rem 0;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
@@ -161,6 +162,13 @@ body {
   background: var(--accent-hover);
   color: #fff;
   box-shadow: 0 8px 20px rgba(11, 100, 214, 0.15);
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 /* ============================================
@@ -269,8 +277,21 @@ select:focus {
   outline: none;
 }
 
+.form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.form-header h2 {
+  margin: 0;
+  flex: 1;
+}
+
 /* ============================================
-   BUTTONS
+   BUTTONS & CAMERA
 ============================================ */
 button {
   background: var(--accent);
@@ -337,6 +358,96 @@ button[disabled] {
   transform: translateY(-2px);
 }
 
+.btn-push-header {
+  padding: 0.6rem 1rem;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.btn-push-header:hover:not(:disabled) {
+  background: #5a6268;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+}
+.btn-push-header.subscribed {
+  background: #0b64d6;
+  color: white;
+}
+.btn-push-header.subscribed:hover:not(:disabled) {
+  background: #0a58ca;
+}
+.btn-push-header:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+#camera-btn,
+#cancel-camera,
+#capture-btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+#camera-btn {
+  background: #3b82f6;
+  color: white;
+}
+#camera-btn:hover {
+  background: #2563eb;
+}
+#cancel-camera {
+  background: #ef4444;
+  color: white;
+  margin-left: 0.5rem;
+}
+#cancel-camera:hover {
+  background: #dc2626;
+}
+#capture-btn {
+  background: #10b981;
+  color: white;
+  width: 100%;
+}
+#capture-btn:hover {
+  background: #059669;
+}
+#camera-video {
+  border: 2px solid #e2e8f0;
+  background: #000;
+}
+
+#install-btn {
+  padding: 0.6rem 1rem;
+  background: #0b64d6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(11, 100, 214, 0.3);
+}
+#install-btn:hover {
+  background: #0a58ca;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(11, 100, 214, 0.4);
+}
+
+
+
 /* ============================================
    FOCUS STATES
 ============================================ */
@@ -395,6 +506,26 @@ textarea:focus-visible {
 .map-card .map-container {
   height: 420px;
   border-radius: var(--radius-sm);
+}
+
+/* ============================================
+   NOTIFICATION
+============================================ */
+
+.notification-info {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #e0f2fe, #f0f9ff);
+  border-left: 4px solid #0ea5e9;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.notification-info p {
+  margin: 0;
+  color: #334155;
+}
+.notification-info strong {
+  color: #0c4a6e;
 }
 
 /* ============================================
@@ -483,7 +614,7 @@ textarea:focus-visible {
   line-height: 1.5;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
@@ -550,7 +681,7 @@ textarea:focus-visible {
 
 .btn-back:hover {
   background: #5a6268;
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow: var(--shadow);
 }
 
@@ -1462,6 +1593,58 @@ footer .container {
   }
 }
 
+@media (max-width: 480px) {
+  .header-actions {
+    width: 100%;
+    order: 3;
+  }
+  
+  .btn-push-header,
+  #install-btn {
+    flex: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-inner {
+    padding: 1rem;
+  }
+  
+  #site-title {
+    font-size: 1.2rem;
+  }
+  
+  #site-title img {
+    width: 32px;
+    height: 32px;
+  }
+  
+  #main-nav a {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+  }
+  
+  .btn-push-header,
+  #install-btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .form-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .btn-push-toggle {
+    width: 100%;
+  }
+  
+  .notification-info {
+    font-size: 0.85rem;
+    padding: 0.75rem;
+  }
+}
+
 /* Mobile Medium - 376px to 768px */
 @media (min-width: 376px) and (max-width: 768px) {
   .container {
@@ -1589,6 +1772,22 @@ footer .container {
   .bookmark-thumb {
     width: 160px;
     height: 160px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .header-inner {
+    flex-wrap: wrap;
+  }
+  
+  #main-nav {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  
+  .header-actions {
+    order: 2;
   }
 }
 

@@ -12,6 +12,48 @@ import LoginPresenter from './presenters/login-presenter.js'
 import RegisterPresenter from './presenters/register-presenter.js'
 import StoryDetailPresenter from './presenters/story-detail-presenter.js'
 import BookmarksPresenter from './presenters/bookmarks-presenter.js'
+import { idbGetAll } from './lib/idb.js';
+
+(async function initDB() {
+  try {
+    console.log('🗄️ Initializing IndexedDB...');
+    await idbGetAll('outbox'); 
+    console.log('✅ IndexedDB ready');
+  } catch (e) {
+    console.error('❌ Failed to initialize IndexedDB:', e);
+  }
+})();
+
+window.addEventListener('online', () => {
+  document.body.classList.remove('offline');
+  console.log('🌐 Back online');
+  
+  if (window.ui && window.ui.showToast) {
+    window.ui.showToast('🌐 Kembali online');
+  }
+  
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      if (reg.active) {
+        console.log('📤 Triggering outbox flush...');
+        reg.active.postMessage('flush-outbox');
+      }
+    });
+  }
+});
+
+window.addEventListener('offline', () => {
+  document.body.classList.add('offline');
+  console.log('📴 Went offline');
+  
+  if (window.ui && window.ui.showToast) {
+    window.ui.showToast('📴 Anda offline. Data akan disinkronkan saat online.');
+  }
+});
+
+if (!navigator.onLine) {
+  document.body.classList.add('offline');
+}
 
 if (typeof L !== 'undefined' && L && L.Icon && L.Icon.Default) {
   L.Icon.Default.mergeOptions({
@@ -71,15 +113,15 @@ const ui = {
     
     const aBookmarks = document.createElement('a')
     aBookmarks.href = '#/bookmarks'
-    aBookmarks.textContent = '📚 Bookmarks'
+    aBookmarks.textContent = 'Bookmarks'
     
     const aAdd = document.createElement('a')
     aAdd.href = '#/add'
     aAdd.textContent = 'Tambah'
     
     nav.appendChild(aHome)
-    nav.appendChild(aBookmarks)
     nav.appendChild(aAdd)
+    nav.appendChild(aBookmarks)
     
     if (username) {
       const span = document.createElement('a')
@@ -281,3 +323,39 @@ window.addEventListener('register:success', (e) => {
   ui.showToast('Register berhasil, silakan login')
   goTo('#/login')
 })
+
+window.addEventListener('load', () => {
+  import('./notification.js').then(module => {
+    if (module.initPushButton) {
+      module.initPushButton();
+    }
+  }).catch(e => {
+    console.error('Error loading notification module:', e);
+  });
+});
+
+window.addEventListener('online', () => {
+  document.body.classList.remove('offline');
+  if (ui && ui.showToast) {
+    ui.showToast('Kembali online');
+  }
+  
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      if (reg.active) {
+        reg.active.postMessage('flush-outbox');
+      }
+    });
+  }
+});
+
+window.addEventListener('offline', () => {
+  document.body.classList.add('offline');
+  if (ui && ui.showAlert) {
+    ui.showAlert('Anda sedang offline. Data akan disinkronkan saat online kembali.');
+  }
+});
+
+if (!navigator.onLine) {
+  document.body.classList.add('offline');
+}

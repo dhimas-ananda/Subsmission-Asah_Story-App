@@ -1,4 +1,6 @@
 import L from 'leaflet';
+import { idbGetAll } from '../lib/idb.js';
+
 export default class HomePresenter {
   constructor({ view, model, ui }) {
     this._view = view;
@@ -9,29 +11,87 @@ export default class HomePresenter {
   }
 
   async init() {
+    await this._checkPendingSync();
+    
     if (this._ui && this._ui.showLoading) this._ui.showLoading(true);
-    const stories = await this._model.fetchStories({ size: 100, location: 1 });
-    if (this._ui && this._ui.showLoading) this._ui.showLoading(false);
-    if (this._view && typeof this._view.renderList === 'function') {
-        this._view.renderList(stories);
+    
+    try {
+      const stories = await this._model.fetchStories({ size: 100, location: 1 });
+      
+      if (this._ui && this._ui.showLoading) this._ui.showLoading(false);
+      
+      const validStories = Array.isArray(stories) ? stories : [];
+      
+      if (this._view && typeof this._view.renderList === 'function') {
+        this._view.renderList(validStories);
+      }
+      
+      this._initMap(validStories);
+      this._bindListClicks();
+    } catch (error) {
+      console.error('Error loading stories:', error);
+      
+      if (this._ui && this._ui.showLoading) this._ui.showLoading(false);
+      
+      if (this._view && typeof this._view.renderList === 'function') {
+        this._view.renderList([]);
+      }
+      
+      if (navigator.onLine && this._ui && this._ui.showToast) {
+        this._ui.showToast('⚠️ Gagal memuat story');
+      }
     }
-    this._view.renderList(stories);
-    this._initMap(stories);
-    this._bindListClicks();
+  }
+
+  async _checkPendingSync() {
+    try {
+      const pending = await idbGetAll('outbox');
+      
+      if (pending && pending.length > 0) {
+        if (this._view && this._view.showSyncStatus) {
+          this._view.showSyncStatus(pending.length);
+        }
+        
+        if (navigator.onLine) {
+          const { flushOutboxFromClient } = await import('../services/offline-sync.js');
+          await flushOutboxFromClient();
+          
+          const remaining = await idbGetAll('outbox');
+          if (this._view && this._view.showSyncStatus) {
+            this._view.showSyncStatus(remaining.length);
+          }
+          
+          if (remaining.length === 0 && this._ui && this._ui.showToast) {
+            this._ui.showToast('✅ Story offline berhasil disinkronkan');
+            setTimeout(() => window.location.reload(), 1000);
+          }
+        }
+      } else {
+        if (this._view && this._view.showSyncStatus) {
+          this._view.showSyncStatus(0);
+        }
+      }
+    } catch (e) {
+      console.error('Error checking pending sync:', e);
+    }
   }
 
   _initMap(stories = []) {
     const container = this._view.getMapContainer();
     if (!container) return;
+
     if (this._map) {
       try { this._map.remove(); } catch (e) {}
       this._map = null;
     }
+
     this._map = L.map(container, { center: [0, 0], zoom: 2 });
+
     const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     });
+
     const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
       maxZoom: 17,
       attribution: '© OpenTopoMap'
@@ -41,10 +101,11 @@ export default class HomePresenter {
       "OpenStreetMap": osmLayer,
       "OpenTopoMap": topoLayer
     };
+
     osmLayer.addTo(this._map);
     L.control.layers(baseMaps).addTo(this._map);
 
-    if (stories && stories.length) {
+    if (stories && stories.length > 0) {
       const bounds = [];
       stories.forEach(s => {
         if (s.lat != null && s.lon != null) {
@@ -55,7 +116,10 @@ export default class HomePresenter {
           bounds.push([s.lat, s.lon]);
         }
       });
-      if (bounds.length) this._map.fitBounds(bounds, { padding: [40, 40] });
+
+      if (bounds.length > 0) {
+        this._map.fitBounds(bounds, { padding: [40, 40] });
+      }
     }
 
     setTimeout(() => { try { this._map.invalidateSize(); } catch (e) {} }, 200);
@@ -64,15 +128,26 @@ export default class HomePresenter {
   _bindListClicks() {
     const list = this._view.getListContainer();
     if (!list) return;
+
     list.addEventListener('click', (e) => {
       const el = e.target.closest('[data-story-id]');
       if (!el) return;
+      
       const id = el.getAttribute('data-story-id');
       const idx = this._view._stories.findIndex(s => s.id === id);
+      
       if (idx >= 0 && this._markers[idx]) {
         this._markers[idx].openPopup();
         this._map.setView(this._markers[idx].getLatLng(), 14);
       }
     });
+  }
+
+  destroy() {
+    if (this._map) {
+      try { this._map.remove(); } catch (e) {}
+      this._map = null;
+    }
+    this._markers = [];
   }
 }

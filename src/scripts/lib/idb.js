@@ -1,24 +1,21 @@
 export function openDatabase() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('story-app-db', 1);
-
+    const req = indexedDB.open('story-app-db', 2); 
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
-      
       if (!db.objectStoreNames.contains('bookmarked-stories')) {
         db.createObjectStore('bookmarked-stories', { keyPath: 'id' });
       }
-      
-      if (!db.objectStoreNames.contains('outbox')) {
-        db.createObjectStore('outbox', { keyPath: 'cid', autoIncrement: true });
+      if (db.objectStoreNames.contains('outbox')) {
+        db.deleteObjectStore('outbox');
       }
+      
+      db.createObjectStore('outbox', { keyPath: 'cid' });
     };
-
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-
 export async function idbAdd(store, value) {
   const db = await openDatabase();
   return new Promise((res, rej) => {
